@@ -399,7 +399,7 @@ window.PISO2_GRAPH = {
     {
       "id": "sala_profesores",
       "label": "Sala Profesores",
-      "node": "n37"
+      "node": "n15"
     },
     {
       "id": "salon_20",
