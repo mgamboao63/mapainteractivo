@@ -5,12 +5,12 @@ const FLOORS={
 };
 const FLOOR_NAMES={1:"Primer piso",2:"Segundo piso",3:"Tercer piso"};
 const overviewViews={
-  1:{focusX:105,focusY:148.5,scale:.7},
-  2:{focusX:104,focusY:108,scale:1.35},
-  3:{focusX:90,focusY:88,scale:1.75}
+  1:{focusX:105,focusY:148.5,scale:.86},
+  2:{focusX:104,focusY:108,scale:1.55},
+  3:{focusX:90,focusY:88,scale:2.05}
 };
 const floorRotations={1:90,2:0,3:0};
-const routeScales={1:1.45,2:2.35,3:2.85};
+const routeScales={1:1.9,2:2.8,3:3.35};
 const originNode=FLOORS[1].graph.locations.find(x=>x.id==="entrada_principal")?.node||"n01";
 const stairs={p1South:"n21",p1Admin:"n04",p2South:"n18",p2North:"n02",p3South:"n01"};
 const adminDestinations=new Set(["coordinacion_academica","secretaria","rectoria","fotocopiadora"]);
@@ -67,7 +67,7 @@ const trackerStatus=document.getElementById("trackerStatus"),startTrackingButton
 let routeSegments=[],segmentIndex=0,currentFloor=1,currentPath=[],selectedDestination=null,scale=1,panX=0,panY=0,dragging=false,lastPoint=null,focusX=105,focusY=148.5,targetX=105,targetY=148.5,rotation=90,baseScale=.7;
 const activePointers=new Map();
 let pinchStart=null;
-let tracking=false,routeProgress=0,routeLength=0,lastStepAt=0,lastMotionPeak=0,lastMotionAt=0,motionEnergy=0,stepCount=0,autoChangingSegment=false;
+let tracking=false,routeProgress=0,routeLength=0,lastStepAt=0,lastMotionPeak=0,lastMotionAt=0,motionEnergy=0,stepCount=0,autoChangingSegment=false,arrivalAnnounced=false;
 let orientationEnabled=false,orientationReady=false,orientationHeading=0,orientationOffset=0,lastPositionPoint=null;
 const stepMapUnits=7,motionMapUnits=.42;
 let audioMuted=false,lastSpeech="";
@@ -96,9 +96,9 @@ function pointAtDistance(distance){const metrics=routeMetrics(),total=metrics.to
 function avatarAngle(point){return orientationEnabled&&orientationReady?orientationHeading+orientationOffset:point.angle}
 function drawPosition(point){positionLayer.innerHTML="";lastPositionPoint=point;if(!point)return;const ring=document.createElementNS("http://www.w3.org/2000/svg","circle"),avatar=document.createElementNS("http://www.w3.org/2000/svg","image"),w=6.5,h=8.2;ring.setAttribute("cx",point.x);ring.setAttribute("cy",point.y);ring.setAttribute("r","4.1");ring.setAttribute("class","position-ring");avatar.setAttribute("href","avatar.svg");avatar.setAttribute("x",point.x-w/2);avatar.setAttribute("y",point.y-h);avatar.setAttribute("width",w);avatar.setAttribute("height",h);avatar.setAttribute("class","position-avatar");avatar.setAttribute("transform",`rotate(${avatarAngle(point)} ${point.x} ${point.y})`);positionLayer.append(ring,avatar)}
 function updateTrackerStatus(text){if(trackerStatus)trackerStatus.textContent=text}
-function maybeAutoAdvanceSegment(){if(autoChangingSegment||segmentIndex>=routeSegments.length-1||!routeLength)return;if(routeProgress<routeLength-1.2)return;const nextFloor=routeSegments[segmentIndex+1].floor;autoChangingSegment=true;updateTrackerStatus(`Llegaste a la escalera. Cambiando al piso ${nextFloor}...`);setTimeout(()=>{autoChangingSegment=false;showSegment(segmentIndex+1)},650)}
-function setRouteProgress(distance){const point=pointAtDistance(distance);if(!point){updateTrackerStatus("Elige una ruta para iniciar.");return}routeProgress=Math.max(0,Math.min(point.total,distance));routeLength=point.total;drawPosition(point);const percent=Math.round(routeLength?routeProgress/routeLength*100:0),walked=Math.round(routeProgress);updateTrackerStatus(`${stepCount} pasos · avance ${walked} · ${percent}% del tramo.`);maybeAutoAdvanceSegment()}
-function resetRouteProgress(){const metrics=routeMetrics();routeProgress=0;routeLength=metrics.total;stepCount=0;lastMotionPeak=0;lastStepAt=0;lastMotionAt=0;motionEnergy=0;autoChangingSegment=false;setRouteProgress(0)}
+function maybeHandleRouteEnd(){if(autoChangingSegment||!routeLength||routeProgress<routeLength-1.2)return;if(segmentIndex<routeSegments.length-1){const nextFloor=routeSegments[segmentIndex+1].floor;autoChangingSegment=true;updateTrackerStatus(`Llegaste a la escalera. Cambiando al piso ${nextFloor}...`);setTimeout(()=>{autoChangingSegment=false;showSegment(segmentIndex+1)},650);return}if(arrivalAnnounced)return;arrivalAnnounced=true;const spoken=spokenDestination(selectedDestination),label=selectedDestination?.label||"tu destino";updateTrackerStatus(`Has llegado a ${label}.`);instruction.innerHTML=`<strong>Has llegado</strong><br>${label}`;speak(`Has llegado a ${spoken}.`,true)}
+function setRouteProgress(distance){const point=pointAtDistance(distance);if(!point){updateTrackerStatus("Elige una ruta para iniciar.");return}routeProgress=Math.max(0,Math.min(point.total,distance));routeLength=point.total;drawPosition(point);const percent=Math.round(routeLength?routeProgress/routeLength*100:0),walked=Math.round(routeProgress);updateTrackerStatus(`${stepCount} pasos · avance ${walked} · ${percent}% del tramo.`);maybeHandleRouteEnd()}
+function resetRouteProgress(){const metrics=routeMetrics();routeProgress=0;routeLength=metrics.total;stepCount=0;lastMotionPeak=0;lastStepAt=0;lastMotionAt=0;motionEnergy=0;autoChangingSegment=false;arrivalAnnounced=false;setRouteProgress(0)}
 function moveOneStep(direction=1){if(!currentPath.length)return;stepCount=Math.max(0,stepCount+direction);setRouteProgress(routeProgress+direction*stepMapUnits)}
 function detectStep(event){if(!tracking||!currentPath.length)return;const acc=event.accelerationIncludingGravity||event.acceleration;if(!acc)return;const magnitude=Math.hypot(acc.x||0,acc.y||0,acc.z||0),now=performance.now(),delta=Math.abs(magnitude-lastMotionPeak);lastMotionPeak=lastMotionPeak?lastMotionPeak*.72+magnitude*.28:magnitude;if(delta>2.1&&now-lastStepAt>380){lastStepAt=now;motionEnergy=0;moveOneStep(1);return}if(delta>.42&&now-lastMotionAt>90){motionEnergy+=Math.min(delta,3);lastMotionAt=now;if(motionEnergy>2.8){motionEnergy-=2.8;setRouteProgress(routeProgress+motionMapUnits*Math.min(delta*2.2,5))}}}
 function normalizeAngle(angle){return ((angle%360)+360)%360}
