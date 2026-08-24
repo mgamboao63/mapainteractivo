@@ -1,0 +1,104 @@
+const FLOORS={
+  1:{graph:window.PISO1_GRAPH,destinations:window.PISO1_DESTINOS||[],image:"piso1.svg"},
+  2:{graph:window.PISO2_GRAPH,destinations:window.PISO2_DESTINOS||[],image:"piso2.svg"},
+  3:{graph:window.PISO3_GRAPH,destinations:window.PISO3_DESTINOS||[],image:"piso3.svg"}
+};
+const FLOOR_NAMES={1:"Primer piso",2:"Segundo piso",3:"Tercer piso"};
+const overviewViews={
+  1:{focusX:105,focusY:148.5,scale:.7},
+  2:{focusX:104,focusY:108,scale:1.05},
+  3:{focusX:90,focusY:88,scale:1.32}
+};
+const originNode=FLOORS[1].graph.locations.find(x=>x.id==="entrada_principal")?.node||"n01";
+const stairs={p1South:"n21",p1Admin:"n04",p2South:"n18",p2North:"n02",p3South:"n01"};
+const adminDestinations=new Set(["coordinacion_academica","secretaria","rectoria","fotocopiadora"]);
+const specialAliases={
+  rectoria:["rector","rectoria colegio","retoria"],secretaria:["secre","secretaria colegio","secretria"],
+  sala_profesores:["profesores","profes","sala profes","sala de profes","salon profesores"],
+  coordinacion_academica:["coordinacion","coordinador","academica","coordinacion academica"],
+  coordinacion_convivencia:["convivencia","coordinacion convivencia"],orientacion:["orientadora","orientador","psicologia","psicologa"],
+  fotocopiadora:["fotocopias","copias","fotocopi"],biblioteca:["libros","biblio","biblioteka"],
+  laboratorio_de_quimica:["quimica","laboratorio","lab quimica"],salon_danzas:["danzas","baile","salon de baile"],
+  salon_de_tecnologia:["tecnologia","tecnologia tercer piso"],informatica_1_y_2:["sistemas","informatica","computadores"]
+};
+const normalize=value=>String(value??"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim();
+const compact=value=>normalize(value).replace(/\s+/g,"");
+const numberWords={cero:"0",uno:"1",un:"1",dos:"2",tres:"3",cuatro:"4",cinco:"5",seis:"6",siete:"7",ocho:"8",nueve:"9",diez:"10",once:"11",primero:"1",segundo:"2",tercero:"3",cuarto:"4",quinto:"5",sexto:"6",septimo:"7",octavo:"8",noveno:"9"};
+const digitSpeech={0:"cero",1:"uno",2:"dos",3:"tres",4:"cuatro",5:"cinco",6:"seis",7:"siete",8:"ocho",9:"nueve"};
+function courseKey(query){
+  const words=normalize(query).split(" ").filter(Boolean).map(word=>numberWords[word]??word);
+  let digits=words.join("").replace(/\D/g,"");
+  if(!digits)return"";
+  if(digits.length===2&&Number(digits[0])>=5&&Number(digits[0])<=9)digits=`${digits[0]}0${digits[1]}`;
+  else if(digits.length===3&&digits.startsWith("10"))digits=`100${digits[2]}`;
+  else if(digits.length===3&&digits.startsWith("11"))digits=`110${digits[2]}`;
+  return digits;
+}
+function spokenCourse(course){
+  const value=String(course??"");
+  if(/^10\d\d$/.test(value))return`diez ${digitSpeech[Number(value.slice(2))]||Number(value.slice(2))}`;
+  if(/^11\d\d$/.test(value))return`once ${digitSpeech[Number(value.slice(2))]||Number(value.slice(2))}`;
+  return value;
+}
+function spokenDestination(destination){
+  return destination?.kind==="course"?`Curso ${spokenCourse(destination.course)}`:destination?.label||"el destino";
+}
+function levenshtein(a,b){const row=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){let previous=row[0];row[0]=i;for(let j=1;j<=b.length;j++){const saved=row[j];row[j]=Math.min(row[j]+1,row[j-1]+1,previous+(a[i-1]===b[j-1]?0:1));previous=saved}}return row[b.length]}
+const entries=[];
+for(const [floor,data] of Object.entries(FLOORS)){
+  data.destinations.forEach(item=>entries.push({kind:"course",floor:Number(floor),id:item.id,node:item.node,label:`Curso ${item.curso}`,speechLabel:`Curso ${spokenCourse(item.curso)}`,detail:`${item.docente} · ${item.salon} · Piso ${floor}`,course:String(item.curso),aliases:[item.curso,item.docente,item.salon,`${item.curso} ${item.docente}`,spokenCourse(item.curso)]}));
+  data.graph.locations.forEach(item=>{if(item.id.startsWith("escalera"))return;entries.push({kind:"place",floor:Number(floor),id:item.id,node:item.node,label:item.label,detail:FLOOR_NAMES[floor],aliases:[item.label,...(specialAliases[item.id]||[])]})});
+}
+function scoreEntry(entry,query){
+  const q=compact(query);if(!q)return Infinity;
+  if(entry.course&&courseKey(query)===entry.course)return 0;
+  const values=[entry.label,entry.detail,...entry.aliases].map(compact).filter(Boolean);
+  if(values.includes(q))return 1;
+  if(values.some(value=>value.startsWith(q)||q.startsWith(value)))return 2;
+  if(values.some(value=>value.includes(q)||q.includes(value)))return 4;
+  const distance=Math.min(...values.map(value=>levenshtein(q,value)/Math.max(q.length,value.length)));
+  return distance<=.42?5+distance*10:Infinity;
+}
+const searchInput=document.getElementById("searchInput"),results=document.getElementById("results"),welcome=document.getElementById("welcome"),routePanel=document.getElementById("routePanel"),destinationCard=document.getElementById("destinationCard"),instruction=document.getElementById("instruction");
+const svg=document.getElementById("mapSvg"),viewport=document.getElementById("viewport"),floorImage=document.getElementById("floorImage"),routePath=document.getElementById("routePath"),routeGlow=document.getElementById("routeGlow"),markers=document.getElementById("markers"),positionLayer=document.getElementById("positionLayer");
+const trackerStatus=document.getElementById("trackerStatus"),startTrackingButton=document.getElementById("startTracking"),stepBackButton=document.getElementById("stepBack"),stepForwardButton=document.getElementById("stepForward");
+let routeSegments=[],segmentIndex=0,currentFloor=1,currentPath=[],selectedDestination=null,scale=1,panX=0,panY=0,dragging=false,lastPoint=null,focusX=105,focusY=148.5,targetX=105,targetY=148.5,rotation=90,baseScale=.7;
+let tracking=false,routeProgress=0,routeLength=0,lastStepAt=0,lastMotionPeak=0,stepCount=0;
+const stepMapUnits=7;
+let audioMuted=false,lastSpeech="";
+function preferredVoice(){const voices=window.speechSynthesis?.getVoices?.()||[];const score=voice=>{const name=normalize(voice.name),lang=(voice.lang||"").toLowerCase();let points=0;if(lang==="es-mx")points+=140;else if(lang.startsWith("es-mx"))points+=120;else if(lang.startsWith("es"))points+=45;if(/raul|jorge|diego|pablo|carlos|male|masculin|hombre/.test(name))points+=55;if(/dalia|sabina|paulina|maria|female|femenin|mujer/.test(name))points-=25;if(/microsoft/.test(name))points+=25;if(/online|natural/.test(name))points+=25;if(/edge/.test(name))points+=10;return points};return voices.filter(voice=>(voice.lang||"").toLowerCase().startsWith("es")).sort((a,b)=>score(b)-score(a))[0]||null}
+function speak(text,force=false){lastSpeech=text;if(audioMuted&&!force)return;if(!window.speechSynthesis||!text)return;window.speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(text),voice=preferredVoice();utterance.lang="es-MX";utterance.rate=.94;utterance.pitch=.94;if(voice)utterance.voice=voice;window.speechSynthesis.speak(utterance)}
+function renderResults(){
+  const query=searchInput.value.trim();results.innerHTML="";if(!query)return;
+  entries.map(entry=>({entry,score:scoreEntry(entry,query)})).filter(x=>Number.isFinite(x.score)).sort((a,b)=>a.score-b.score||a.entry.label.localeCompare(b.entry.label)).slice(0,6).forEach(({entry})=>{const button=document.createElement("button");button.className="result";button.innerHTML=`<strong>${entry.label}</strong><span>${entry.detail}</span>`;button.onclick=()=>selectDestination(entry);results.appendChild(button)});
+  if(!results.children.length)results.innerHTML='<div class="result"><strong>No encontramos ese destino</strong><span>Prueba con el curso, docente o un nombre más corto.</span></div>';
+}
+function adjacency(floor){const graph=FLOORS[floor].graph,adj=Object.fromEntries(Object.keys(graph.nodes).map(id=>[id,[]]));graph.edges.forEach(([a,b])=>{const na=graph.nodes[a],nb=graph.nodes[b],cost=Math.hypot(na.x-nb.x,na.y-nb.y);adj[a].push({id:b,cost});adj[b].push({id:a,cost})});return adj}
+const adjacencies={1:adjacency(1),2:adjacency(2),3:adjacency(3)};
+function shortestPath(floor,start,goal){const nodes=FLOORS[floor].graph.nodes,adj=adjacencies[floor],pending=new Set(Object.keys(nodes)),dist=Object.fromEntries(Object.keys(nodes).map(id=>[id,Infinity])),prev={};dist[start]=0;while(pending.size){let current=null,best=Infinity;pending.forEach(id=>{if(dist[id]<best){best=dist[id];current=id}});if(!current||current===goal)break;pending.delete(current);adj[current].forEach(({id,cost})=>{const next=dist[current]+cost;if(pending.has(id)&&next<dist[id]){dist[id]=next;prev[id]=current}})}if(start!==goal&&!prev[goal])return[];const path=[goal];while(path[0]!==start)path.unshift(prev[path[0]]);return path}
+function buildSegments(destination){
+  const spoken=spokenDestination(destination);
+  if(destination.floor===1)return[{floor:1,path:shortestPath(1,originNode,destination.node),message:`Sigue la ruta hasta ${destination.label}.`,speech:`Vamos a ${spoken}. Sigue la línea azul hasta tu destino.`}];
+  if(destination.floor===2){const admin=adminDestinations.has(destination.id),p1Stair=admin?stairs.p1Admin:stairs.p1South,p2Stair=admin?stairs.p2North:stairs.p2South;return[{floor:1,path:shortestPath(1,originNode,p1Stair),message:`Ve hasta la escalera ${admin?"norte":"sur"}.`,speech:`Vamos a ${spoken}. Sigue la línea azul hasta la escalera ${admin?"norte":"sur"} y sube al segundo piso.`},{floor:2,path:shortestPath(2,p2Stair,destination.node),message:`Ya en el segundo piso, continúa hasta ${destination.label}.`,speech:`Estás en el segundo piso. Sigue la línea azul hasta ${spoken}.`}];}
+  return[{floor:1,path:shortestPath(1,originNode,stairs.p1South),message:"Ve hasta la escalera sur y sube directamente al tercer piso.",speech:`Vamos a ${spoken}. Sigue la línea azul hasta la escalera sur y sube directamente al tercer piso. Cuando llegues, pulsa el botón ya estoy en el piso tres.`},{floor:3,path:shortestPath(3,stairs.p3South,destination.node),message:`Ya en el tercer piso, continúa hasta ${destination.label}.`,speech:`Estás en el tercer piso. Sigue la línea azul hasta ${spoken}.`}];
+}
+function selectDestination(entry){selectedDestination=entry;routeSegments=buildSegments(entry);segmentIndex=0;searchInput.value="";results.innerHTML="";welcome.hidden=true;routePanel.hidden=false;destinationCard.innerHTML=`<strong>${entry.label}</strong><span>${entry.detail}</span>`;showSegment(0)}
+function showSegment(index){segmentIndex=Math.max(0,Math.min(routeSegments.length-1,index));const segment=routeSegments[segmentIndex];switchFloor(segment.floor,segment.path);resetRouteProgress();instruction.innerHTML=`<strong>Paso ${segmentIndex+1} de ${routeSegments.length}</strong><br>${segment.message}`;document.getElementById("previousSegment").disabled=segmentIndex===0;const next=document.getElementById("nextSegment");next.disabled=segmentIndex===routeSegments.length-1;if(segmentIndex===routeSegments.length-1)next.textContent="Llegaste";else if(selectedDestination?.floor===3&&segmentIndex===0)next.textContent="Ya estoy en el piso 3";else next.textContent=`Ya estoy en el piso ${routeSegments[segmentIndex+1].floor}`;speak(segment.speech)}
+function switchFloor(floor,path=null){currentFloor=floor;currentPath=path||routeSegments.find(x=>x.floor===floor)?.path||[];floorImage.setAttribute("href",FLOORS[floor].image);document.getElementById("floorBadge").textContent=`Piso ${floor}`;document.querySelectorAll("[data-floor]").forEach(button=>button.classList.toggle("active",Number(button.dataset.floor)===floor));drawPath(currentPath);currentPath.length?centerOnRoute():showAll()}
+function drawPath(path){const nodes=FLOORS[currentFloor].graph.nodes,d=path.map((id,i)=>`${i?"L":"M"} ${nodes[id].x} ${nodes[id].y}`).join(" ");routePath.setAttribute("d",d);routeGlow.setAttribute("d",d);markers.innerHTML="";if(!path.length){drawPosition(null);return}[[path[0],"origin-marker"],[path.at(-1),"destination-marker"]].forEach(([id,className])=>{const c=document.createElementNS("http://www.w3.org/2000/svg","circle");c.setAttribute("cx",nodes[id].x);c.setAttribute("cy",nodes[id].y);c.setAttribute("r","2.2");c.setAttribute("class",className);markers.appendChild(c)})}
+function routeMetrics(path=currentPath){const nodes=FLOORS[currentFloor].graph.nodes,segments=[];let total=0;for(let i=1;i<path.length;i++){const a=nodes[path[i-1]],b=nodes[path[i]],length=Math.hypot(b.x-a.x,b.y-a.y);segments.push({a,b,length,start:total});total+=length}return{segments,total}}
+function pointAtDistance(distance){const metrics=routeMetrics(),total=metrics.total;if(!metrics.segments.length)return null;const clamped=Math.max(0,Math.min(total,distance));const segment=metrics.segments.find(item=>clamped<=item.start+item.length)||metrics.segments.at(-1),local=segment.length?((clamped-segment.start)/segment.length):0;return{x:segment.a.x+(segment.b.x-segment.a.x)*local,y:segment.a.y+(segment.b.y-segment.a.y)*local,total}}
+function drawPosition(point){positionLayer.innerHTML="";if(!point)return;const ring=document.createElementNS("http://www.w3.org/2000/svg","circle"),dot=document.createElementNS("http://www.w3.org/2000/svg","circle");ring.setAttribute("cx",point.x);ring.setAttribute("cy",point.y);ring.setAttribute("r","4.4");ring.setAttribute("class","position-ring");dot.setAttribute("cx",point.x);dot.setAttribute("cy",point.y);dot.setAttribute("r","2.7");dot.setAttribute("class","position-dot");positionLayer.append(ring,dot)}
+function updateTrackerStatus(text){if(trackerStatus)trackerStatus.textContent=text}
+function setRouteProgress(distance){const point=pointAtDistance(distance);if(!point){updateTrackerStatus("Elige una ruta para iniciar.");return}routeProgress=Math.max(0,Math.min(point.total,distance));routeLength=point.total;drawPosition(point);const percent=Math.round(routeLength?routeProgress/routeLength*100:0);updateTrackerStatus(`${stepCount} pasos detectados · ${percent}% del tramo.`)}
+function resetRouteProgress(){const metrics=routeMetrics();routeProgress=0;routeLength=metrics.total;stepCount=0;lastMotionPeak=0;lastStepAt=0;setRouteProgress(0)}
+function moveOneStep(direction=1){if(!currentPath.length)return;stepCount=Math.max(0,stepCount+direction);setRouteProgress(routeProgress+direction*stepMapUnits)}
+function detectStep(event){if(!tracking||!currentPath.length)return;const acc=event.accelerationIncludingGravity||event.acceleration;if(!acc)return;const magnitude=Math.hypot(acc.x||0,acc.y||0,acc.z||0),now=performance.now(),delta=Math.abs(magnitude-lastMotionPeak);lastMotionPeak=lastMotionPeak*.72+magnitude*.28;if(delta>2.1&&now-lastStepAt>380){lastStepAt=now;moveOneStep(1)}}
+async function startTracking(){if(!currentPath.length){updateTrackerStatus("Primero elige un destino.");return}if(location.protocol!=="https:"&&location.hostname!=="localhost"){updateTrackerStatus("Para sensores reales abre la app con HTTPS. Aquí puedes probar con los botones.");return}if(typeof DeviceMotionEvent==="undefined"){updateTrackerStatus("Este equipo no entrega sensor de movimiento. Usa los botones de paso.");return}try{if(typeof DeviceMotionEvent.requestPermission==="function"){const permission=await DeviceMotionEvent.requestPermission();if(permission!=="granted"){updateTrackerStatus("Permiso de movimiento denegado. Usa los botones de paso.");return}}window.addEventListener("devicemotion",detectStep);tracking=true;startTrackingButton.classList.add("active");startTrackingButton.textContent="Activo";updateTrackerStatus("Sensor activo. Camina y el punto avanzará por la ruta.")}catch(error){updateTrackerStatus("No se pudo activar el sensor. Usa los botones de paso.")}}
+function applyTransform(){viewport.setAttribute("transform",`translate(${targetX+panX} ${targetY+panY}) scale(${scale*baseScale}) rotate(${rotation}) translate(${-focusX} ${-focusY})`)}
+function centerOnRoute(){if(!currentPath.length)return showAll();const nodes=FLOORS[currentFloor].graph.nodes,origin=nodes[currentPath[0]],next=currentPath.length>1?nodes[currentPath[1]]:origin,direction=Math.atan2(next.y-origin.y,next.x-origin.x)*180/Math.PI;focusX=origin.x;focusY=origin.y;targetX=105;targetY=225;rotation=-90-direction;baseScale=1.2;scale=1;panX=0;panY=0;applyTransform()}
+function showAll(){const view=overviewViews[currentFloor];focusX=view.focusX;focusY=view.focusY;targetX=105;targetY=148.5;rotation=90;baseScale=view.scale;scale=1;panX=0;panY=0;applyTransform()}
+searchInput.addEventListener("input",renderResults);document.getElementById("clearSearch").onclick=()=>{searchInput.value="";results.innerHTML="";searchInput.focus()};document.getElementById("backSearch").onclick=()=>{window.speechSynthesis?.cancel();tracking=false;startTrackingButton.classList.remove("active");startTrackingButton.textContent="Iniciar";routePanel.hidden=true;welcome.hidden=false;routeSegments=[];currentPath=[];selectedDestination=null;drawPath([]);searchInput.focus()};document.getElementById("previousSegment").onclick=()=>showSegment(segmentIndex-1);document.getElementById("nextSegment").onclick=()=>showSegment(segmentIndex+1);document.querySelectorAll("[data-floor]").forEach(button=>button.onclick=()=>switchFloor(Number(button.dataset.floor)));document.getElementById("centerRoute").onclick=centerOnRoute;document.getElementById("showAll").onclick=showAll;document.getElementById("zoomIn").onclick=()=>{scale=Math.min(3.8,scale+.18);applyTransform()};document.getElementById("zoomOut").onclick=()=>{scale=Math.max(.65,scale-.18);applyTransform()};startTrackingButton.onclick=startTracking;stepBackButton.onclick=()=>moveOneStep(-1);stepForwardButton.onclick=()=>moveOneStep(1);document.getElementById("repeatAudio").onclick=()=>speak(lastSpeech,true);document.getElementById("toggleAudio").onclick=event=>{audioMuted=!audioMuted;if(audioMuted)window.speechSynthesis?.cancel();event.currentTarget.textContent=audioMuted?"🔊 Activar audio":"🔇 Silenciar"};
+function pointer(event){const p=svg.createSVGPoint();p.x=event.clientX;p.y=event.clientY;return p.matrixTransform(svg.getScreenCTM().inverse())}svg.addEventListener("pointerdown",event=>{dragging=true;lastPoint=pointer(event);svg.classList.add("dragging");svg.setPointerCapture(event.pointerId)});svg.addEventListener("pointermove",event=>{if(!dragging)return;const p=pointer(event);panX+=p.x-lastPoint.x;panY+=p.y-lastPoint.y;lastPoint=p;applyTransform()});svg.addEventListener("pointerup",event=>{dragging=false;svg.classList.remove("dragging");svg.releasePointerCapture(event.pointerId)});svg.addEventListener("wheel",event=>{event.preventDefault();scale=Math.max(.65,Math.min(3.8,scale+(event.deltaY>0?-.12:.12)));applyTransform()},{passive:false});
+const quickIds=["rectoria","secretaria","sala_profesores","biblioteca","teatro"];
+quickIds.forEach(id=>{const entry=entries.find(item=>item.id===id);if(!entry)return;const button=document.createElement("button");button.textContent=entry.label;button.onclick=()=>selectDestination(entry);document.getElementById("quickPlaces").appendChild(button)});showAll();searchInput.focus();

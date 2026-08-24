@@ -4,6 +4,7 @@ window.PISO1_DESTINOS = [
     "tipo": "curso",
     "curso": "501",
     "label": "501 - Salon 11",
+    "docente": "PAOLA SIERRA",
     "salon": "Salon 11",
     "node": "n47"
   },
@@ -12,6 +13,7 @@ window.PISO1_DESTINOS = [
     "tipo": "curso",
     "curso": "502",
     "label": "502 - Salon 1",
+    "docente": "ELIZABETH TORRES",
     "salon": "Salon 1",
     "node": "n20"
   },
@@ -20,6 +22,7 @@ window.PISO1_DESTINOS = [
     "tipo": "curso",
     "curso": "503",
     "label": "503 - Salon 2",
+    "docente": "NELCI JIMENEZ",
     "salon": "Salon 2",
     "node": "n18"
   },
@@ -28,6 +31,7 @@ window.PISO1_DESTINOS = [
     "tipo": "curso",
     "curso": "504",
     "label": "504 - Salon 12",
+    "docente": "ROSA LILIA PARADA",
     "salon": "Salon 12",
     "node": "n12"
   },
@@ -36,6 +40,7 @@ window.PISO1_DESTINOS = [
     "tipo": "curso",
     "curso": "601",
     "label": "601 - Salon 3",
+    "docente": "JAVIER PEREZ",
     "salon": "Salon 3",
     "node": "n16"
   },
@@ -44,6 +49,7 @@ window.PISO1_DESTINOS = [
     "tipo": "curso",
     "curso": "602",
     "label": "602 - Salon 4",
+    "docente": "LUIS HERNANDO MORA",
     "salon": "Salon 4",
     "node": "n32"
   },
@@ -52,6 +58,7 @@ window.PISO1_DESTINOS = [
     "tipo": "curso",
     "curso": "603",
     "label": "603 - Salon 5",
+    "docente": "CESAR GONZALEZ",
     "salon": "Salon 5",
     "node": "n34"
   },
@@ -60,6 +67,7 @@ window.PISO1_DESTINOS = [
     "tipo": "curso",
     "curso": "604",
     "label": "604 - Salon 6",
+    "docente": "ANDRES APARICIO",
     "salon": "Salon 6",
     "node": "n36"
   },
@@ -68,6 +76,7 @@ window.PISO1_DESTINOS = [
     "tipo": "curso",
     "curso": "701",
     "label": "701 - Salon 7",
+    "docente": "MARIA ALEJANDRA HERNANDEZ",
     "salon": "Salon 7",
     "node": "n28"
   },
@@ -76,6 +85,7 @@ window.PISO1_DESTINOS = [
     "tipo": "curso",
     "curso": "702",
     "label": "702 - Salon 8",
+    "docente": "RUBEN GARZON",
     "salon": "Salon 8",
     "node": "n26"
   },
@@ -84,6 +94,7 @@ window.PISO1_DESTINOS = [
     "tipo": "curso",
     "curso": "703",
     "label": "703 - Salon 9",
+    "docente": "NIDIA JIMENEZ",
     "salon": "Salon 9",
     "node": "n24"
   },
@@ -92,6 +103,7 @@ window.PISO1_DESTINOS = [
     "tipo": "curso",
     "curso": "704",
     "label": "704 - Salon 10",
+    "docente": "DAYANE FIGUEROA",
     "salon": "Salon 10",
     "node": "n08"
   },
@@ -100,6 +112,7 @@ window.PISO1_DESTINOS = [
     "tipo": "curso",
     "curso": "902",
     "label": "902 - Sistemas 2",
+    "docente": "DANIEL NEGRET",
     "salon": "Sistemas 2",
     "node": "n41"
   },
